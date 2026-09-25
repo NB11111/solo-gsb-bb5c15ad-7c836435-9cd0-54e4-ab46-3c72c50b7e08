@@ -333,4 +333,99 @@ Message-ID: <align-demo@mail.partner.example>
 SAMPLE_ORG_DOMAIN = "partner.example"
 
 
+# 邮件会话关系示例：多封邮件用页面规范分隔行分开，覆盖
+# - 正常会话树：#1（根）<- #2 <- #3，#3 的 References 跨两封且带折行，
+#   按“末项”连到 #2；#4 缺失 In-Reply-To，回退 References 末项连到 #2；
+# - 外部引用：#5 的父 Message-ID 不在批次内（作为树根单独标出）；
+# - 孤立邮件：#6 没有任何父引用字段，也不被其他邮件引用；
+# - In-Reply-To 多 ID 歧义：#7 含两个尖括号 ID，不强行连边（不回退 References）；
+# - 重复 Message-ID：#8 与 #9 声明了同一个 Message-ID，两封均标为歧义，
+#   引用该 ID 的 #10 无法确定唯一父邮件，也不连边；
+# - 引用环：#11 与 #12 互相把对方写作 In-Reply-To（自环同理），环上两封
+#   均标为歧义、删除连边。
+SAMPLE_HEADERS_THREAD = """\
+Message-ID: <thread-root-001@example.com>
+From: Alice <alice@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 01:00:00 +0000
+Subject: Thread demo: release plan
+===== 下一封邮件 =====
+Message-ID: <thread-reply-002@example.com>
+In-Reply-To: <thread-root-001@example.com>
+References: <thread-root-001@example.com>
+From: Bob <bob@example.com>
+To: Alice <alice@example.com>
+Date: Fri, 25 Sep 2026 01:10:00 +0000
+Subject: Re: Thread demo: release plan
+===== 下一封邮件 =====
+Message-ID: <thread-reply-003@example.com>
+In-Reply-To: <thread-reply-002@example.com>
+References: <thread-root-001@example.com>
+\t<thread-reply-002@example.com>
+From: Carol <carol@example.com>
+To: Bob <bob@example.com>
+Date: Fri, 25 Sep 2026 01:20:00 +0000
+Subject: Re: Thread demo: release plan
+===== 下一封邮件 =====
+Message-ID: <thread-reply-004@example.com>
+References: <thread-root-001@example.com> <thread-reply-002@example.com>
+From: Dave <dave@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 01:30:00 +0000
+Subject: Re: Thread demo: release plan
+===== 下一封邮件 =====
+Message-ID: <thread-ext-005@example.com>
+In-Reply-To: <message-outside-batch@external.example>
+From: Eve <eve@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 02:00:00 +0000
+Subject: Fwd: an older thread not in this batch
+===== 下一封邮件 =====
+Message-ID: <thread-orphan-006@example.com>
+From: Frank <frank@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 02:10:00 +0000
+Subject: Standalone note, unrelated to anything pasted
+===== 下一封邮件 =====
+Message-ID: <thread-amb-irt-007@example.com>
+In-Reply-To: <thread-root-001@example.com> <thread-reply-002@example.com>
+References: <thread-root-001@example.com>
+From: Grace <grace@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 02:20:00 +0000
+Subject: Re: Thread demo: release plan (two In-Reply-To ids)
+===== 下一封邮件 =====
+Message-ID: <thread-dup-id-008@example.com>
+From: Heidi <heidi@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 02:30:00 +0000
+Subject: Duplicate Message-ID case A
+===== 下一封邮件 =====
+Message-ID: <thread-dup-id-008@example.com>
+From: Ivan <ivan@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 02:40:00 +0000
+Subject: Duplicate Message-ID case B
+===== 下一封邮件 =====
+Message-ID: <thread-points-dup-010@example.com>
+In-Reply-To: <thread-dup-id-008@example.com>
+From: Judy <judy@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 02:50:00 +0000
+Subject: Re: Duplicate Message-ID case A
+===== 下一封邮件 =====
+Message-ID: <thread-cycle-a-011@example.com>
+In-Reply-To: <thread-cycle-b-012@example.com>
+From: Karl <karl@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 03:00:00 +0000
+Subject: Cycle case A
+===== 下一封邮件 =====
+Message-ID: <thread-cycle-b-012@example.com>
+In-Reply-To: <thread-cycle-a-011@example.com>
+From: Leo <leo@example.com>
+To: team@example.com
+Date: Fri, 25 Sep 2026 03:10:00 +0000
+Subject: Cycle case B
+"""
 

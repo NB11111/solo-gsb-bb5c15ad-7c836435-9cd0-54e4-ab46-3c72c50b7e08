@@ -17,6 +17,7 @@ from mailtrace.parsing import (
     check_arc_chain,
     compare_headers,
     split_batch_headers,
+    thread_analysis,
 )
 from mailtrace.parsing.sample import (
     SAMPLE_HEADERS,
@@ -26,6 +27,7 @@ from mailtrace.parsing.sample import (
     SAMPLE_HEADERS_B,
     SAMPLE_HEADERS_BATCH,
     SAMPLE_HEADERS_DKIM,
+    SAMPLE_HEADERS_THREAD,
     SAMPLE_HEADERS_TRUST,
     SAMPLE_ORG_DOMAIN,
     SAMPLE_TRUSTED_HOSTS,
@@ -56,6 +58,7 @@ def create_app() -> Flask:
             "sample_batch": SAMPLE_HEADERS_BATCH,
             "sample_arc": SAMPLE_HEADERS_ARC,
             "sample_dkim": SAMPLE_HEADERS_DKIM,
+            "sample_thread": SAMPLE_HEADERS_THREAD,
             "sample_trust": SAMPLE_HEADERS_TRUST,
             "sample_trusted_hosts": SAMPLE_TRUSTED_HOSTS,
             "sample_authres": SAMPLE_HEADERS_AUTHRES,
@@ -118,6 +121,13 @@ def create_app() -> Flask:
             if error:
                 return {"error": error}
         return batch_delay_analysis(headers_list)
+
+    def _do_thread(headers_list: list[str]) -> dict:
+        for idx, raw in enumerate(headers_list, start=1):
+            error = _check_size(raw, f"第 {idx} 封")
+            if error:
+                return {"error": error}
+        return thread_analysis(headers_list)
 
     def _do_arc_check(raw_headers: str) -> dict:
         error = _check_size(raw_headers)
@@ -211,6 +221,35 @@ def create_app() -> Flask:
         else:
             batch = _do_batch_delays(headers_list)
         return render_index(headers_batch=raw_batch, batch=batch)
+
+    @app.post("/thread-relations")
+    def thread_relations_form():
+        raw_batch = request.form.get("headers_thread", "")
+        headers_list = split_batch_headers(raw_batch)
+        if not headers_list:
+            thread = {
+                "error": "未识别到任何邮件头部，请用分隔行（如 "
+                "“===== 下一封邮件 =====”）分开至少一份原始头部",
+                "message_count": 0,
+                "parsed_count": 0,
+                "message_errors": [],
+                "id_count": 0,
+                "edge_count": 0,
+                "tree_count": 0,
+                "orphan_count": 0,
+                "external_count": 0,
+                "ambiguous_count": 0,
+                "duplicate_id_sets": [],
+                "external_refs": [],
+                "ambiguities": [],
+                "trees": [],
+                "orphans": [],
+                "ambiguous_messages": [],
+                "messages": [],
+            }
+        else:
+            thread = _do_thread(headers_list)
+        return render_index(headers_thread=raw_batch, thread=thread)
 
     @app.post("/arc-check")
     def arc_check_form():
@@ -321,6 +360,28 @@ def create_app() -> Flask:
         if any(not item.strip() for item in headers_list):
             return jsonify({"error": "headers 数组中存在空白项，请删除后重试"}), 400
         result = _do_batch_delays(headers_list)
+        status = 400 if result.get("error") else 200
+        return jsonify(result), status
+
+    @app.post("/api/thread-relations")
+    def thread_relations_api():
+        if not request.is_json:
+            return jsonify(
+                {"error": "请使用 application/json 提交 {\"headers\": [头部字符串, ...]}"}
+            ), 400
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "请求体必须是 JSON 对象，含 headers 字符串数组"}), 400
+        headers_list = payload.get("headers")
+        if not isinstance(headers_list, list) or not all(
+            isinstance(item, str) for item in headers_list
+        ):
+            return jsonify({"error": "headers 必须是字符串数组（每封邮件一个原始头部）"}), 400
+        if len(headers_list) < 1:
+            return jsonify({"error": "请至少提供一封邮件的原始头部"}), 400
+        if any(not item.strip() for item in headers_list):
+            return jsonify({"error": "headers 数组中存在空白项，请删除后重试"}), 400
+        result = _do_thread(headers_list)
         status = 400 if result.get("error") else 200
         return jsonify(result), status
 

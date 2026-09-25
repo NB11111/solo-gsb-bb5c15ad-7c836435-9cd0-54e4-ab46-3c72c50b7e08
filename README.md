@@ -19,6 +19,16 @@
   Received 解析，按各邮件投递顺序中**实际相邻的两个节点**聚合慢段，
   输出每段的样本数、中位耗时、最大耗时（从慢到快排序），并统计
   因时间无效 / 时间倒灌被排除的区段数。
+- **邮件会话关系（Message-ID 引用树）**：页面一次粘贴**多封**用同一套
+  分隔行分开的原始头部，或调用 `POST /api/thread-relations`
+  （`headers` 字符串数组，一封一个元素）。系统复用折行展开解析，逐封提取
+  `Message-ID` / `In-Reply-To` / `References` 字段中**尖括号内**的消息 ID：
+  `In-Reply-To` 只有一个 ID 时以它为父；该字段缺失或没有可用尖括号 ID 时
+  回退取 `References` 末项；两者都没有即为会话根。**重复 Message-ID**
+  （跨封重复或单封出现多个 ID）、**In-Reply-To 含多个 ID**、以及
+  **形成环（含自环）**的关联逐项标为歧义并删除连边，其余邮件照常建树；
+  父 ID 不在批次内显示为**外部引用**，无父无子的邮件列为**孤立邮件**。
+  页面与 JSON 均展示会话树、外部引用、孤立邮件、歧义清单与**逐封关联依据**。
 - **单封邮件脱敏分享**：分析页点击 **“下载脱敏报告”**（或调用
   `POST /api/analyze/share`，输入 `headers` 字符串），按投递顺序为不同
   主机名、IP 分别分配**本次请求内稳定**的 `H1`、`IP1` 等别名；同一值在
@@ -118,7 +128,7 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
 
 | 用途 | 地址（默认 `http://localhost:8000`） |
 | --- | --- |
-| 页面（投递路径 / 对照 / 慢段归因 / ARC / DKIM 覆盖 / 可信边界 / 认证结果来源 / 发件域对齐） | `http://localhost:8000/` |
+| 页面（投递路径 / 对照 / 慢段归因 / 会话关系 / ARC / DKIM 覆盖 / 可信边界 / 认证结果来源 / 发件域对齐） | `http://localhost:8000/` |
 | 单份头部分析 | `POST http://localhost:8000/api/analyze` |
 | 脱敏分享报告 | `POST http://localhost:8000/api/analyze/share` |
 | **接收链可信边界** | `POST http://localhost:8000/api/analyze/trust-boundary` |
@@ -126,6 +136,7 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
 | **发件域对齐审计** | `POST http://localhost:8000/api/analyze/sender-alignment` |
 | 双邮件头路径对照 | `POST http://localhost:8000/api/compare` |
 | 多封慢段归因 | `POST http://localhost:8000/api/batch-delays` |
+| **邮件会话关系（引用树）** | `POST http://localhost:8000/api/thread-relations` |
 | ARC 链结构检查 | `POST http://localhost:8000/api/arc/check` |
 | **DKIM 头字段覆盖审计** | `POST http://localhost:8000/api/dkim/coverage` |
 | 健康检查 | `GET http://localhost:8000/healthz` |
@@ -146,17 +157,25 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
    **“多封邮件慢段归因”** 文本框，邮件之间单独一行写分隔符
    `===== 下一封邮件 =====`（可点“填入 3 封示例”参考格式），
    点击 **慢段归因（多封）**。
-6. 需要检查 **ARC 链结构**时，把含 ARC 字段的原始头部粘贴到
+6. 需要梳理**邮件会话关系**时，把多封原始头部粘贴到
+   **“🧵 邮件会话关系（Message-ID 引用树）”** 文本框，沿用同一套分隔行
+   （可点“填入 12 封示例”查看正常引用树、外部引用、孤立邮件、多 ID 歧义、
+   重复 Message-ID 与引用环等各类样例），点击 **分析会话关系（多封）**：
+   页面以树形展示父子回复关系，单独卡片列出批次外父 ID（外部引用）、
+   未连边的歧义邮件与孤立邮件，并以表格给出**逐封**提取到的
+   `Message-ID` / `In-Reply-To` / `References`、父邮件序号、选取依据
+   （In-Reply-To 唯一 ID / References 末项）与关联状态。
+7. 需要检查 **ARC 链结构**时，把含 ARC 字段的原始头部粘贴到
    **“ARC 链结构检查”** 文本框（可点“填入示例”查看一条完整的两实例
    ARC 链），点击 **检查 ARC 链**：页面展示总状态、每个实例的三类字段
    齐全性与 Seal `cv` 校验结果，并对非法 `i`、字段重复 / 缺失、跳号、
    `cv` 异常逐项定位。
-7. 需要审计 **DKIM 头字段覆盖**时，把含 `DKIM-Signature` 的原始头部粘贴到
+8. 需要审计 **DKIM 头字段覆盖**时，把含 `DKIM-Signature` 的原始头部粘贴到
    **“DKIM 头字段覆盖审计”** 文本框（可点“填入示例”，其中含两条签名、
    `h=` 重复字段、countersignature 与被注入的重复 `To` 副本），点击
    **审计 DKIM 覆盖**：页面逐条展示每个 `h=` 项匹配到的字段位置、未匹配
    项，以及 `From` / `Subject` / `To` / `Date` 未被该签名覆盖的实际副本。
-8. 需要定位**外部交接点 / 接收链可信边界**时，在
+9. 需要定位**外部交接点 / 接收链可信边界**时，在
    **“🔗 接收链可信边界（单封邮件）”** 区域把单封邮件的原始头部粘贴到
    头部文本框，并在下方**每行填写一个本组织接收服务器主机名**
    （如 `edge.internal.corp`、`gw2.internal.corp`；忽略大小写与末尾点，
@@ -166,7 +185,7 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
    并以单独卡片展示**外部交接点**（最后可信跳的 `from` 主机与对端 IP）。
    顶端第一跳就未命中或缺少 `by`、以及头部完全没有 `Received` 时，
    页面会明确提示**无法建立可信链**（而不是误判为全部可信）。
-9. 需要确认 **Authentication-Results 是否来自本组织**时，在
+10. 需要确认 **Authentication-Results 是否来自本组织**时，在
    **“🛡️ 认证结果来源”** 区域粘贴单封邮件原始头部并填写本组织接收服务器
    名单（可点“填入示例”，含身份不符、越过边界、无对应跳等各类样例），
    点击 **分析认证结果来源**：页面逐条展示每条 `Authentication-Results`
@@ -174,7 +193,7 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
    ✗ 无对应跳），并以结果词卡片汇总本组织声明的 `spf` / `dkim` /
    `dmarc`（按原文顺序、保留重复声明）；无法建立可信前缀时明确显示
    **无本组织声明**。
-10. 需要审计**发件域对齐**时，在 **“🧭 发件域对齐审计”** 区域粘贴单封
+11. 需要审计**发件域对齐**时，在 **“🧭 发件域对齐审计”** 区域粘贴单封
     邮件原始头部、填写本组织接收服务器名单与**发件组织域**（如
     `partner.example`），选择**严格模式**（身份域与 From 域完全相同）或
     **宽松模式**（两域均为组织域或其子域，按标签边界匹配），点击
@@ -344,6 +363,119 @@ curl -s -X POST http://localhost:8000/api/batch-delays \
 - 某封邮件没有 `Received` 字段时记入 `message_errors`（含其在数组中的序号），
   其余邮件继续分析；所有邮件都没有 `Received`、数组少于两项、元素不是字符串
   或存在空白项时返回 400。
+
+邮件会话关系分析（接收 `headers` **字符串数组**，一封邮件一个元素，至少一项；
+页面粘贴文本沿用慢段归因的分隔行，分隔符切分在页面端完成）：
+
+```bash
+curl -s -X POST http://localhost:8000/api/thread-relations \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "headers": [
+          "Message-ID: <a@example.com>\nFrom: ...\nSubject: ...",
+          "Message-ID: <b@example.com>\nIn-Reply-To: <a@example.com>\nReferences: <a@example.com>\n...",
+          "Message-ID: <c@example.com>\nReferences: <a@example.com> <b@example.com>\n..."
+        ]
+      }'
+```
+
+返回结果（节选，页面与 JSON 共用同一结构）：
+
+```json
+{
+  "message_count": 3,
+  "parsed_count": 3,
+  "message_errors": [],
+  "id_count": 3,
+  "edge_count": 2,
+  "tree_count": 1,
+  "orphan_count": 0,
+  "external_count": 0,
+  "ambiguous_count": 0,
+  "duplicate_id_sets": [],
+  "external_refs": [],
+  "ambiguities": [],
+  "trees": [
+    {
+      "root_index": 1,
+      "external_parent_id": null,
+      "node": {
+        "index": 1, "message_id": "a@example.com",
+        "subject": "root", "relation": "root", "relation_label": "会话根（无父引用）",
+        "basis": "none", "parent_id": null, "parent_index": null,
+        "ambiguity_codes": [],
+        "children": [
+          {
+            "index": 2, "message_id": "b@example.com",
+            "relation": "linked", "relation_label": "已连接父邮件",
+            "basis": "in_reply_to", "parent_id": "a@example.com",
+            "parent_index": 1, "ambiguity_codes": [],
+            "children": [
+              {
+                "index": 3, "message_id": "c@example.com",
+                "relation": "linked", "basis": "references",
+                "parent_id": "b@example.com", "parent_index": 2,
+                "ambiguity_codes": [], "children": []
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "orphans": [],
+  "ambiguous_messages": [],
+  "messages": [
+    {
+      "index": 3,
+      "message_id": "c@example.com",
+      "message_id_all": ["c@example.com"],
+      "message_id_field_count": 1,
+      "in_reply_to_ids": [],
+      "references_ids": ["a@example.com", "b@example.com"],
+      "parent_id": "b@example.com",
+      "parent_index": 2,
+      "parent_external": false,
+      "basis": "references",
+      "basis_label": "References 末项（In-Reply-To 缺失 / 不可用）",
+      "relation": "linked",
+      "relation_label": "已连接父邮件",
+      "ambiguity_codes": [],
+      "child_indexes": [],
+      "reasons": []
+    }
+  ]
+}
+```
+
+- 提取口径：复用折行展开（含大小写不敏感的字段名），只取三类字段中
+  **尖括号 `<...>` 内**的消息 ID，尖括号外的裸 token / 注释一律不采信；
+  同一字段内重复出现的同一 ID 只保留一次。
+- 选父规则：`In-Reply-To` 恰好解析出一个 ID 时直接以它为父
+  （`basis: "in_reply_to"`）；该字段缺失、为空或没有尖括号 ID 时，
+  回退取 `References` 的**末项**（`basis: "references"`）；两者都没有时
+  `basis: "none"`，是会话根。
+- 连边前提：父 ID 必须在批次内对应**唯一且无歧义**的 `Message-ID`：
+  - 重复 `Message-ID`（跨封重复，或单封字段多值 / 多副本）收集到
+    `duplicate_id_sets`，重复各方与指向该 ID 的子邮件全部标为歧义，
+    `ambiguity_codes` 含 `duplicate_message_id`；
+  - `In-Reply-To` 含多个尖括号 ID 时代码为 `multiple_in_reply_to`，
+    **不回退 References**、不强行连边；
+  - 连边后发现引用环（含自环）时代码为 `cycle`，环上各封的出边全部删除。
+  歧义邮件收集到 `ambiguities` / `ambiguous_messages`（含逐条 `reasons`），
+  不影响其余邮件建树；歧义邮件若仍有正常子回复，会带歧义标记出现在树中。
+- 父 ID 在批次内找不到时 `relation: "external"`（外部引用），
+  去重汇总到 `external_refs`（含引用方序号 `referenced_by`），
+  该邮件作为一棵树的根（`external_parent_id` 标出批次外父 ID）；
+  没有任何父引用也没有子邮件、且无歧义的邮件进 `orphans`；
+  未声明可用 `Message-ID` 的邮件 `relation: "no_id"`，不能被引用为父。
+- `trees[].node` 以嵌套 `children` 给出会话树；`messages` 是逐封的
+  关联依据（提取到的全部 ID、字段副本数、父序号、依据与可读原因），
+  页面与 JSON 字段一致。
+- 输入限制与 `/api/batch-delays` 一致：必须是 JSON 对象且 `headers`
+  为字符串数组、无空白项、至少一封（每封单独受 `MAX_INPUT_KB` 限制）；
+  全部头部都无法解析为任何邮件字段时返回 400，个别无法解析的邮件记入
+  `message_errors` 且其余继续分析。
 
 ARC 链结构检查（本地启动后地址为 `http://localhost:8000/api/arc/check`，
 端口随 `HOST_PORT` 变化，见下文“访问端口”）：
@@ -734,23 +866,25 @@ python -m unittest discover -s tests -v
 │       ├── parser.py       # 折行展开、时间解析、路径排序、耗时与异常
 │       ├── compare.py      # 双邮件头对照：保序全局对齐、耗时差值
 │       ├── batch.py        # 多封慢段归因：相邻节点对聚合、中位/最大耗时、排除计数
+│       ├── thread.py       # 邮件会话关系：尖括号消息 ID、In-Reply-To/References 选父、歧义与环处理、会话树
 │       ├── share.py        # 单封脱敏分享：H1/IP1 别名化、白名单报告
 │       ├── arc.py          # ARC 链结构检查：i 标签归组、字段齐全性、连续编号、cv 校验
 │       ├── dkim.py         # DKIM h= 头字段覆盖审计：逐条签名、自底部向上匹配、重复字段不合并
 │       ├── trust.py        # 接收链可信边界：自顶端连续 by 命中、边界位置、外部交接点
 │       ├── authres.py      # 认证结果来源：AR 归属紧邻 Received、可信前缀 + authserv-id 判定
 │       ├── align.py        # 发件域对齐审计：唯一 From 域、spf/dkim pass 身份域、严格/宽松比较
-│       └── sample.py       # 页面“填入示例”数据（A / B、批量三份、ARC、DKIM、可信边界、认证结果来源及发件域对齐示例）
+│       └── sample.py       # 页面“填入示例”数据（A / B、批量三份、会话关系、ARC、DKIM、可信边界、认证结果来源及发件域对齐示例）
 ├── wsgi.py                 # gunicorn / flask 启动入口
 ├── entrypoint.sh           # 容器启动时安装依赖并启动 gunicorn
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-└── tests/                  # 解析核心、对照、脱敏、慢段归因、ARC 链、DKIM 覆盖、可信边界、认证结果来源与发件域对齐单元测试
+└── tests/                  # 解析核心、对照、脱敏、慢段归因、会话关系、ARC 链、DKIM 覆盖、可信边界、认证结果来源与发件域对齐单元测试
     ├── test_parser.py
     ├── test_compare.py
     ├── test_share.py
     ├── test_batch.py
+    ├── test_thread.py
     ├── test_arc.py
     ├── test_dkim.py
     ├── test_trust.py

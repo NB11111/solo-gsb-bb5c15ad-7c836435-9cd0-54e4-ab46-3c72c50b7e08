@@ -8,6 +8,7 @@ from .compare import compare_headers
 from .dkim import audit_dkim_coverage
 from .parser import analyze_headers, parse_header_blocks
 from .share import build_share_report
+from .thread import thread_analysis
 from .trust import analyze_trust_boundary, parse_trusted_hosts
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "parse_header_blocks",
     "parse_trusted_hosts",
     "split_batch_headers",
+    "thread_analysis",
 ]

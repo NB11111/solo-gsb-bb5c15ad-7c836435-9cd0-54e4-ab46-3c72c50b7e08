@@ -318,6 +318,77 @@
   table.align td.dom { word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
   .from-card { border: 1px solid var(--line); }
   .from-card.bad { border-color: var(--error); }
+
+  /* 邮件会话关系 */
+  .btn-thread { background: #f472b6; color: #500724; }
+  ul.thread-tree, ul.thread-tree ul {
+    list-style: none; margin: 0; padding-left: 26px;
+    position: relative;
+  }
+  ul.thread-tree { padding-left: 0; }
+  ul.thread-tree ul::before {
+    content: ""; position: absolute; left: 9px; top: 0; bottom: 14px;
+    width: 2px; background: var(--line);
+  }
+  ul.thread-tree li { position: relative; margin: 8px 0; }
+  ul.thread-tree ul li::before {
+    content: ""; position: absolute; left: -17px; top: 20px;
+    width: 15px; height: 2px; background: var(--line);
+  }
+  .tnode {
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 10px 14px; display: inline-block;
+    min-width: 280px; max-width: 640px;
+  }
+  .tnode.root { border-left-color: var(--ok); }
+  .tnode.external { border-left-color: var(--warn); }
+  .tnode .t-subj { font-weight: 700; word-break: break-word; }
+  .tnode .t-meta { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-all; }
+  .tnode .t-mid { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+  .tbadge {
+    display: inline-block; border-radius: 999px; padding: 0 9px;
+    font-size: 11.5px; font-weight: 700; white-space: nowrap; margin-right: 6px;
+  }
+  .tbadge.idx { background: var(--accent); color: #082f49; }
+  .tbadge.linked { background: var(--ok); color: #052e1b; }
+  .tbadge.root { background: var(--ok); color: #052e1b; }
+  .tbadge.external { background: var(--warn); color: #422006; }
+  .tbadge.ambiguous { background: var(--error); color: #450a0a; }
+  .tbadge.no_id { background: var(--panel-2); color: var(--muted); }
+  .tbadge.basis { background: var(--panel-2); color: var(--muted); font-weight: 600; }
+  .ext-line {
+    color: var(--warn); font-size: 12.5px; margin: 2px 0 8px;
+  }
+  .ext-line code { color: var(--warn); }
+  table.thread {
+    width: 100%; border-collapse: collapse; font-size: 12.5px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; margin-top: 8px;
+  }
+  table.thread th, table.thread td {
+    padding: 8px 11px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--line);
+  }
+  table.thread thead th {
+    background: var(--panel-2); color: var(--muted);
+    font-size: 12px; white-space: nowrap;
+  }
+  table.thread tbody tr:last-child td { border-bottom: 0; }
+  table.thread td.pos { white-space: nowrap; font-weight: 700; }
+  table.thread td.mid {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 11.5px; word-break: break-all;
+  }
+  table.thread tr.row-ambiguous td { border-left: 3px solid var(--error); }
+  table.thread tr.row-external td { border-left: 3px solid var(--warn); }
+  table.thread tr.row-linked td { border-left: 3px solid var(--ok); }
+  table.thread tr.row-root td { border-left: 3px solid var(--line); }
+  table.thread tr.row-no_id td { border-left: 3px solid var(--line); opacity: 0.9; }
+  .idlist { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; word-break: break-all; }
+  .idlist .inb { color: var(--ok); }
+  .idlist .out { color: var(--warn); }
+  .idlist .amb { color: var(--error); }
 </style>
 </head>
 <body>
@@ -493,6 +564,29 @@
       <button class="btn-primary" type="submit">慢段归因（多封）</button>
       <button class="btn-ghost" type="button" id="fillBatchSample">填入 3 封示例</button>
       <button class="btn-ghost" type="button" id="clearBatch">清空</button>
+    </div>
+  </form>
+
+  <h2 class="section-title">🧵 邮件会话关系（Message-ID 引用树）</h2>
+  <p class="subtitle" style="margin-bottom:10px;">
+    粘贴多封邮件的原始头部（沿用 <code>===== 下一封邮件 =====</code> 分隔行，
+    也支持 <code>---</code>、<code>###</code>、<code>***</code>），或调用
+    <code>POST /api/thread-relations</code>（<code>headers</code> 字符串数组）。
+    系统复用同一套折行展开，提取每封 <code>Message-ID</code>、
+    <code>In-Reply-To</code>、<code>References</code> 字段中<strong>尖括号内</strong>
+    的消息 ID：<code>In-Reply-To</code> 只有一个 ID 时以它为父；该字段缺失 /
+    不可用时取 <code>References</code> 末项。<strong>重复 Message-ID、
+    In-Reply-To 含多个 ID、形成环</strong>的关联标为歧义，不强行连边；
+    父 ID 不在批次内时显示为外部引用。页面与 JSON 均展示会话树、孤立邮件
+    与逐封关联依据。
+  </p>
+  <form method="post" action="/thread-relations" id="threadForm">
+    <textarea name="headers_thread" id="headers_thread" style="min-height:260px;"
+      placeholder="第 1 封邮件完整原始头部……&#10;===== 下一封邮件 =====&#10;第 2 封邮件完整原始头部……&#10;===== 下一封邮件 =====&#10;第 3 封邮件完整原始头部……">{{ headers_thread or '' }}</textarea>
+    <div class="toolbar">
+      <button class="btn-thread" type="submit">分析会话关系（多封）</button>
+      <button class="btn-ghost" type="button" id="fillThreadSample">填入 12 封示例</button>
+      <button class="btn-ghost" type="button" id="clearThread">清空</button>
     </div>
   </form>
 
@@ -1103,6 +1197,223 @@
     {% endif %}
   {% endif %}
 
+  {% if thread %}
+    {% if thread.error %}
+      <div class="banner">{{ thread.error }}</div>
+    {% else %}
+      {% macro thread_node(node) %}
+      <li>
+        <div class="tnode {% if node.relation == 'external' %}external{% elif node.parent_index is none %}root{% endif %}">
+          <div>
+            <span class="tbadge idx">#{{ node.index }}</span>
+            {% if node.ambiguity_codes %}
+              <span class="tbadge ambiguous">歧义</span>
+            {% elif node.relation == 'external' %}
+              <span class="tbadge external">外部引用根</span>
+            {% elif node.parent_index is none %}
+              <span class="tbadge root">会话根</span>
+            {% else %}
+              <span class="tbadge linked">已连接</span>
+            {% endif %}
+            <span class="t-subj">{{ node.subject or '（无 Subject）' }}</span>
+          </div>
+          <div class="t-meta">
+            {% if node.from %}{{ node.from }}{% else %}（无 From）{% endif %}
+            {% if node.date %} · {{ node.date }}{% endif %}
+          </div>
+          <div class="t-meta t-mid">
+            Message-ID: {% if node.message_id %}<code>{{ node.message_id }}</code>{% else %}<span class="time-bad">缺失 / 不唯一</span>{% endif %}
+            {% if node.parent_index is not none %} · 父：#{{ node.parent_index }} <span class="tbadge basis">{{ node.basis_label }}</span>{% endif %}
+          </div>
+        </div>
+        {% if node.children %}
+        <ul>
+          {% for child in node.children %}{{ thread_node(child) }}{% endfor %}
+        </ul>
+        {% endif %}
+      </li>
+      {% endmacro %}
+
+      <h2 style="font-size:18px;">邮件会话关系结果</h2>
+      {% set ns = namespace(batch=[], external=[], duplicate=[]) %}
+      {% for m in thread.messages %}{% if m.message_id %}{% set _ = ns.batch.append(m.message_id) %}{% endif %}{% endfor %}
+      {% for e in thread.external_refs %}{% set _ = ns.external.append(e.message_id) %}{% endfor %}
+      {% for d in thread.duplicate_id_sets %}{% set _ = ns.duplicate.append(d.message_id) %}{% endfor %}
+      <div class="stats">
+        <div class="stat"><div class="num">{{ thread.parsed_count }} / {{ thread.message_count }}</div><div class="label">成功解析 / 提交邮件</div></div>
+        <div class="stat"><div class="num">{{ thread.id_count }}</div><div class="label">已识别 Message-ID 邮件</div></div>
+        <div class="stat"><div class="num ok">{{ thread.tree_count }}</div><div class="label">会话树</div></div>
+        <div class="stat"><div class="num">{{ thread.edge_count }}</div><div class="label">父子连边</div></div>
+        <div class="stat"><div class="num warn">{{ thread.external_count }}</div><div class="label">外部引用</div></div>
+        <div class="stat"><div class="num">{{ thread.orphan_count }}</div><div class="label">孤立邮件</div></div>
+        <div class="stat"><div class="num {% if thread.ambiguous_count %}error{% endif %}">{{ thread.ambiguous_count }}</div><div class="label">歧义（未连边）</div></div>
+      </div>
+
+      {% if thread.message_errors %}
+      <div class="card">
+        <h2>未参与分析的邮件</h2>
+        <ul class="msgerr-list">
+          {% for me in thread.message_errors %}
+          <li>第 {{ me.index }} 封：{{ me.error }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if thread.duplicate_id_sets %}
+      <div class="card">
+        <h2>重复 Message-ID（身份不唯一，相关邮件不参与连边）</h2>
+        <ul class="anomalies">
+          {% for d in thread.duplicate_id_sets %}
+          <li class="error">⛔ <code>{{ d.message_id }}</code> 在第
+            {{ d.owner_indexes | join('、') }} 封重复出现。</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <div class="card">
+        <h2>🌳 会话树（{{ thread.tree_count }}）</h2>
+        {% if thread.trees %}
+          {% for tree in thread.trees %}
+            {% if tree.external_parent_id %}
+            <div class="ext-line">↳ 树根 #{{ tree.root_index }} 的父邮件不在本批次：
+              <code>{{ tree.external_parent_id }}</code>（外部引用）</div>
+            {% endif %}
+            <ul class="thread-tree">
+              {{ thread_node(tree.node) }}
+            </ul>
+          {% endfor %}
+        {% else %}
+          <p class="hint" style="margin:0;">没有可呈现的会话树（所有邮件均为孤立或歧义）。</p>
+        {% endif %}
+      </div>
+
+      {% if thread.external_refs %}
+      <div class="card">
+        <h2>🔗 外部引用（父 ID 不在本批次，{{ thread.external_count }}）</h2>
+        <table class="thread">
+          <thead><tr><th>批次外父 Message-ID</th><th>被哪几封引用</th></tr></thead>
+          <tbody>
+            {% for ext in thread.external_refs %}
+            <tr class="row-external">
+              <td class="mid"><code>{{ ext.message_id }}</code></td>
+              <td class="pos">{% for i in ext.referenced_by %}#{{ i }}{% if not loop.last %}、{% endif %}{% endfor %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {% if thread.ambiguous_messages %}
+      <div class="card">
+        <h2>⚠️ 关联歧义（{{ thread.ambiguous_count }}，未强行连边）</h2>
+        <div class="trust-list">
+          {% for m in thread.ambiguous_messages %}
+          <div class="trust-row boundary">
+            <div class="hop-head">
+              <span class="trust-idx">第 {{ m.index }} 封</span>
+              <span class="trust-badge t-boundary">歧义，未连边</span>
+              <span class="t-mid">{% if m.message_id %}<code>{{ m.message_id }}</code>{% else %}Message-ID 缺失 / 不唯一{% endif %}</span>
+            </div>
+            <ul class="anomalies" style="margin-top:8px;">
+              {% for r in m.reasons %}<li class="warn">⚠ {{ r }}</li>{% endfor %}
+            </ul>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if thread.orphans %}
+      <div class="card">
+        <h2>📄 孤立邮件（{{ thread.orphan_count }}：无父引用且无子邮件）</h2>
+        <div class="trust-list">
+          {% for m in thread.orphans %}
+          <div class="trust-row outside">
+            <div class="hop-head">
+              <span class="trust-idx">第 {{ m.index }} 封</span>
+              <span class="hop-node" style="font-size:14px;">{{ m.subject or '（无 Subject）' }}</span>
+            </div>
+            <div class="t-meta t-mid">
+              Message-ID: {% if m.message_id %}<code>{{ m.message_id }}</code>{% else %}<span class="time-bad">未声明</span>{% endif %}
+            </div>
+            {% for r in m.reasons %}<p class="hint" style="margin:4px 0 0;">{{ r }}</p>{% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="card">
+        <h2>🔎 逐封关联依据（{{ thread.messages | length }}）</h2>
+        <div class="cmp-wrap">
+        <table class="thread">
+          <thead>
+            <tr>
+              <th>#</th><th>Message-ID</th><th>In-Reply-To</th><th>References</th>
+              <th>父邮件</th><th>选取依据</th><th>关联状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in thread.messages %}
+            <tr class="row-{{ m.relation }}">
+              <td class="pos">{{ m.index }}</td>
+              <td class="mid">
+                {% if m.message_id %}<code>{{ m.message_id }}</code>
+                {% else %}<span class="time-bad">缺失 / 不唯一</span>{% endif %}
+                {% if m.message_id_field_count != 1 %}
+                  <span class="sub hint">字段 ×{{ m.message_id_field_count }}，候选 {{ m.message_id_all | length }}</span>
+                {% endif %}
+              </td>
+              <td class="idlist">
+                {% if m.in_reply_to_ids %}
+                  {% for ident in m.in_reply_to_ids %}
+                    <span class="{% if ident in ns.duplicate %}amb{% elif ident in ns.external %}out{% elif ident in ns.batch %}inb{% endif %}">&lt;{{ ident }}&gt;</span>{% if not loop.last %} {% endif %}
+                  {% endfor %}
+                {% else %}<span class="hint">—</span>{% endif %}
+              </td>
+              <td class="idlist">
+                {% if m.references_ids %}
+                  {% for ident in m.references_ids %}
+                    <span class="{% if ident in ns.duplicate %}amb{% elif ident in ns.external %}out{% elif ident in ns.batch %}inb{% endif %}">&lt;{{ ident }}&gt;</span>{% if not loop.last %} {% endif %}
+                  {% endfor %}
+                {% else %}<span class="hint">—</span>{% endif %}
+              </td>
+              <td class="pos">
+                {% if m.parent_index %}#{{ m.parent_index }}
+                {% elif m.parent_external %}<span class="tbadge external">批次外</span>
+                {% else %}—{% endif %}
+                {% if m.parent_id %}<span class="sub hint"><code>{{ m.parent_id }}</code></span>{% endif %}
+              </td>
+              <td><span class="tbadge basis">{{ m.basis_label }}</span></td>
+              <td>
+                <span class="tbadge {{ m.relation }}">{{ m.relation_label }}</span>
+                {% for r in m.reasons %}<span class="sub hint">{{ r }}</span>{% endfor %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <p class="hint" style="margin:10px 0 0;">
+          尖括号外的裸文本不采信；In-Reply-To 恰好一个 ID 时直接以它为父，
+          缺失 / 无尖括号 ID 时才回退 References 末项；歧义邮件的依据见上节逐条说明。
+        </p>
+      </div>
+
+      <p class="legend">
+        关联口径：复用折行展开解析，提取每封 <code>Message-ID</code> /
+        <code>In-Reply-To</code> / <code>References</code> 中尖括号包裹的消息 ID；
+        父邮件在批次内必须对应<strong>唯一且无歧义</strong>的 Message-ID 才连边。
+        重复 Message-ID（跨封或同封多值）、In-Reply-To 多 ID、引用环（含自环）
+        均标为歧义并删除连边，其他邮件不受影响；父 ID 批次外记为外部引用，
+        无父无子的邮件列为孤立邮件。
+      </p>
+    {% endif %}
+  {% endif %}
+
   {% if compare %}
     {% if compare.error %}
       <div class="banner">{{ compare.error }}</div>
@@ -1293,6 +1604,15 @@
   document.getElementById('clearBatch').addEventListener('click', () => {
     taBatch.value = '';
     taBatch.focus();
+  });
+
+  const taThread = document.getElementById('headers_thread');
+  document.getElementById('fillThreadSample').addEventListener('click', () => {
+    taThread.value = {{ sample_thread | tojson }};
+  });
+  document.getElementById('clearThread').addEventListener('click', () => {
+    taThread.value = '';
+    taThread.focus();
   });
 
   const taArc = document.getElementById('headers_arc');
