@@ -19,6 +19,14 @@
   Received 解析，按各邮件投递顺序中**实际相邻的两个节点**聚合慢段，
   输出每段的样本数、中位耗时、最大耗时（从慢到快排序），并统计
   因时间无效 / 时间倒灌被排除的区段数。
+- **多封邮件会话关系**：页面粘贴多封用同一套分隔行分开的原始头部，
+  或调用 `POST /api/thread-relations`（`headers` 字符串数组）。
+  复用同一套折行展开解析，提取每封 `Message-ID`、`In-Reply-To`、
+  `References` 中的**尖括号消息 ID**：`In-Reply-To` 只有一个 ID 时以它为
+  父邮件，缺少该字段时取 `References` 末项。**重复 Message-ID、
+  In-Reply-To 含多个 ID 或形成环的关联标为歧义，不强行连边**；
+  批次外的父 ID 显示为**外部引用**。页面与 JSON 展示**会话树、
+  孤立邮件及逐封关联依据**。
 - **单封邮件脱敏分享**：分析页点击 **“下载脱敏报告”**（或调用
   `POST /api/analyze/share`，输入 `headers` 字符串），按投递顺序为不同
   主机名、IP 分别分配**本次请求内稳定**的 `H1`、`IP1` 等别名；同一值在
@@ -118,7 +126,7 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
 
 | 用途 | 地址（默认 `http://localhost:8000`） |
 | --- | --- |
-| 页面（投递路径 / 对照 / 慢段归因 / ARC / DKIM 覆盖 / 可信边界 / 认证结果来源 / 发件域对齐） | `http://localhost:8000/` |
+| 页面（投递路径 / 对照 / 慢段归因 / 会话关系 / ARC / DKIM 覆盖 / 可信边界 / 认证结果来源 / 发件域对齐） | `http://localhost:8000/` |
 | 单份头部分析 | `POST http://localhost:8000/api/analyze` |
 | 脱敏分享报告 | `POST http://localhost:8000/api/analyze/share` |
 | **接收链可信边界** | `POST http://localhost:8000/api/analyze/trust-boundary` |
@@ -126,6 +134,7 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
 | **发件域对齐审计** | `POST http://localhost:8000/api/analyze/sender-alignment` |
 | 双邮件头路径对照 | `POST http://localhost:8000/api/compare` |
 | 多封慢段归因 | `POST http://localhost:8000/api/batch-delays` |
+| **多封邮件会话关系** | `POST http://localhost:8000/api/thread-relations` |
 | ARC 链结构检查 | `POST http://localhost:8000/api/arc/check` |
 | **DKIM 头字段覆盖审计** | `POST http://localhost:8000/api/dkim/coverage` |
 | 健康检查 | `GET http://localhost:8000/healthz` |
@@ -183,6 +192,13 @@ docker build -t mailtrace . && docker run --rm -p 8000:8000 mailtrace
     其下展示 From 域解析卡片与每条本组织 `spf` / `dkim` 声明的
     方法、声明字段位置、接收跳、身份域与比较结果；重复 From 字段、
     单字段多地址、缺地址 / 缺域时明确提示并判定证据不足，绝不静默择一。
+11. 需要还原**多封邮件的会话关系**时，把多封原始头部粘贴到
+    **“🧵 邮件会话关系（多封）”** 文本框，邮件之间单独一行写分隔符
+    `===== 下一封邮件 =====`（可点“填入示例”查看含三级会话树、外部引用、
+    歧义与孤立邮件的样例），点击 **分析会话关系**：页面展示统计卡片、
+    每棵会话树（外部引用的根邮件单独标注批次外父 ID）、孤立邮件列表，
+    以及逐封关联依据表（各封的 Message-ID / In-Reply-To / References
+    提取结果、判定状态与依据说明）。
 
 慢段归因的聚合口径：
 
@@ -344,6 +360,80 @@ curl -s -X POST http://localhost:8000/api/batch-delays \
 - 某封邮件没有 `Received` 字段时记入 `message_errors`（含其在数组中的序号），
   其余邮件继续分析；所有邮件都没有 `Received`、数组少于两项、元素不是字符串
   或存在空白项时返回 400。
+
+多封邮件会话关系（接收 `headers` **字符串数组**，至少两项；每封邮件的完整
+原始头部作为一个数组元素，分隔符切分在页面端完成）：
+
+```bash
+curl -s -X POST http://localhost:8000/api/thread-relations \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "headers": [
+          "Message-ID: <m1@example.com>\nSubject: 季度报表确认",
+          "Message-ID: <m2@example.net>\nIn-Reply-To: <m1@example.com>\nSubject: Re: 季度报表确认",
+          "Message-ID: <m3@example.com>\nReferences: <m1@example.com> <m2@example.net>\nSubject: Re: 季度报表确认"
+        ]
+      }'
+```
+
+返回结果（节选）：
+
+```json
+{
+  "message_count": 3,
+  "thread_count": 1,
+  "linked_count": 2,
+  "external_ref_count": 0,
+  "ambiguous_count": 0,
+  "orphan_count": 0,
+  "threads": [
+    {
+      "root_index": 1,
+      "external_parent_id": null,
+      "size": 3,
+      "tree": {
+        "index": 1, "message_id": "<m1@example.com>", "subject": "季度报表确认",
+        "children": [
+          {"index": 2, "message_id": "<m2@example.net>",
+           "children": [
+             {"index": 3, "message_id": "<m3@example.com>", "children": []}
+           ]}
+        ]
+      }
+    }
+  ],
+  "orphans": [],
+  "messages": [
+    {"index": 1, "message_ids": ["<m1@example.com>"], "message_id": "<m1@example.com>",
+     "subject": "季度报表确认", "in_reply_to_ids": [], "references_ids": [],
+     "children": [2],
+     "relation": {"basis": "none", "parent_id": null, "status": "none",
+                  "status_label": "无父邮件线索", "ambiguous_reason": null,
+                  "parent_index": null,
+                  "detail": "未提取到 In-Reply-To / References 尖括号消息 ID，无父邮件线索"}},
+    {"index": 3, "message_ids": ["<m3@example.com>"],
+     "references_ids": ["<m1@example.com>", "<m2@example.net>"], "children": [],
+     "relation": {"basis": "references_last", "parent_id": "<m2@example.net>",
+                  "status": "linked", "parent_index": 2,
+                  "detail": "缺少 In-Reply-To 字段，取 References 末项 <m2@example.net> 与第 2 封的 Message-ID 匹配，以第 2 封为父"}}
+  ]
+}
+```
+
+- 关联口径：`In-Reply-To` 恰好一个尖括号 ID 时以它为父（`basis` 为
+  `in_reply_to`）；缺少该字段（或其中没有尖括号 ID）时取 `References`
+  末项（`basis` 为 `references_last`）；两者都不可用时 `status` 为 `none`。
+- `relation.status`：`linked`（已关联批次内父邮件，见 `parent_index`）、
+  `external`（父 ID 不在本批次，记为外部引用，不连边）、`ambiguous`
+  （歧义，不强行连边，原因见 `ambiguous_reason`：`in_reply_to_multiple`
+  / `duplicate_message_id` / `cycle`，含自引用）、`none`（无父邮件线索）。
+- `threads` 为会话树列表（大树在前）：根是无批次内父、但有子节点或外部
+  父引用的邮件；`external_parent_id` 非空表示根邮件的父 ID 在批次外。
+  `orphans` 为孤立邮件序号（无父边、无子节点、无外部引用）。
+- `messages` 逐封给出提取到的三类消息 ID 与关联依据（`relation.detail`
+  为中文说明），页面“逐封关联依据”表格与此一一对应。
+- 输入限制与 `/api/batch-delays` 一致：`headers` 必须是字符串数组、
+  至少两项、无空白项，每封不超过 `MAX_INPUT_KB` 上限，违反返回 400。
 
 ARC 链结构检查（本地启动后地址为 `http://localhost:8000/api/arc/check`，
 端口随 `HOST_PORT` 变化，见下文“访问端口”）：
@@ -734,23 +824,25 @@ python -m unittest discover -s tests -v
 │       ├── parser.py       # 折行展开、时间解析、路径排序、耗时与异常
 │       ├── compare.py      # 双邮件头对照：保序全局对齐、耗时差值
 │       ├── batch.py        # 多封慢段归因：相邻节点对聚合、中位/最大耗时、排除计数
+│       ├── thread.py       # 多封会话关系：Message-ID/In-Reply-To/References 提取、歧义判定、会话树
 │       ├── share.py        # 单封脱敏分享：H1/IP1 别名化、白名单报告
 │       ├── arc.py          # ARC 链结构检查：i 标签归组、字段齐全性、连续编号、cv 校验
 │       ├── dkim.py         # DKIM h= 头字段覆盖审计：逐条签名、自底部向上匹配、重复字段不合并
 │       ├── trust.py        # 接收链可信边界：自顶端连续 by 命中、边界位置、外部交接点
 │       ├── authres.py      # 认证结果来源：AR 归属紧邻 Received、可信前缀 + authserv-id 判定
 │       ├── align.py        # 发件域对齐审计：唯一 From 域、spf/dkim pass 身份域、严格/宽松比较
-│       └── sample.py       # 页面“填入示例”数据（A / B、批量三份、ARC、DKIM、可信边界、认证结果来源及发件域对齐示例）
+│       └── sample.py       # 页面“填入示例”数据（A / B、批量三份、ARC、DKIM、可信边界、认证结果来源、发件域对齐及会话关系示例）
 ├── wsgi.py                 # gunicorn / flask 启动入口
 ├── entrypoint.sh           # 容器启动时安装依赖并启动 gunicorn
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-└── tests/                  # 解析核心、对照、脱敏、慢段归因、ARC 链、DKIM 覆盖、可信边界、认证结果来源与发件域对齐单元测试
+└── tests/                  # 解析核心、对照、脱敏、慢段归因、会话关系、ARC 链、DKIM 覆盖、可信边界、认证结果来源与发件域对齐单元测试
     ├── test_parser.py
     ├── test_compare.py
     ├── test_share.py
     ├── test_batch.py
+    ├── test_thread.py
     ├── test_arc.py
     ├── test_dkim.py
     ├── test_trust.py

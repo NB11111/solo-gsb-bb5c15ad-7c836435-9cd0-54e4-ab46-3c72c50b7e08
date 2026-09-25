@@ -332,5 +332,56 @@ Message-ID: <align-demo@mail.partner.example>
 # 发件域对齐示例的发件组织域（宽松模式使用）
 SAMPLE_ORG_DOMAIN = "partner.example"
 
+# 邮件会话关系示例：6 封邮件，用页面规范分隔符分开。
+# - 第 1 → 2 → 3 封构成一条会话树：第 2 封 In-Reply-To 唯一 ID 指向第 1 封；
+#   第 3 封缺少 In-Reply-To，取折行的 References 末项（<m2@example.net>）
+#   指向第 2 封；
+# - 第 4 封的 In-Reply-To 父 ID 不在本批次内 → 外部引用（单节点树根）；
+# - 第 5 封 In-Reply-To 含两个消息 ID → 歧义，不强行连边；
+# - 第 6 封没有 In-Reply-To / References → 孤立邮件。
+SAMPLE_HEADERS_THREAD = """\
+Message-ID: <m1@example.com>
+Date: Thu, 24 Sep 2026 09:00:00 +0000
+From: Alice <alice@example.com>
+To: Bob <bob@example.net>
+Subject: 季度报表确认
+===== 下一封邮件 =====
+Message-ID: <m2@example.net>
+In-Reply-To: <m1@example.com>
+References: <m1@example.com>
+Date: Thu, 24 Sep 2026 09:20:00 +0000
+From: Bob <bob@example.net>
+To: Alice <alice@example.com>
+Subject: Re: 季度报表确认
+===== 下一封邮件 =====
+Message-ID: <m3@example.com>
+References: <m1@example.com>
+\t<m2@example.net>
+Date: Thu, 24 Sep 2026 09:45:00 +0000
+From: Alice <alice@example.com>
+To: Bob <bob@example.net>
+Subject: Re: 季度报表确认
+===== 下一封邮件 =====
+Message-ID: <m4@example.net>
+In-Reply-To: <outside-2026@elsewhere.example>
+Date: Thu, 24 Sep 2026 10:05:00 +0000
+From: Carol <carol@example.net>
+To: Alice <alice@example.com>
+Subject: 转发：外部讨论
+===== 下一封邮件 =====
+Message-ID: <m5@example.com>
+In-Reply-To: <m1@example.com> <m2@example.net>
+Date: Thu, 24 Sep 2026 10:30:00 +0000
+From: Dave <dave@example.com>
+To: Alice <alice@example.com>
+Subject: 多方回复（歧义示例）
+===== 下一封邮件 =====
+Message-ID: <m6@example.net>
+Date: Thu, 24 Sep 2026 11:00:00 +0000
+From: Erin <erin@example.net>
+To: Alice <alice@example.com>
+Subject: 独立的新话题
+"""
+
 
 
